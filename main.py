@@ -47,18 +47,34 @@ def carregar_fontes():
         "monitorizacao_A": DATA / "monitorizacao_A.csv",
         "monitorizacao_B": DATA / "monitorizacao_B.csv",
     }
+
     for nome, path in paths.items():
         if not path.exists():
-            raise FileNotFoundError(f"Ficheiro obrigatório em falta: {path}")
-    dados = {nome: pd.read_csv(path) for nome, path in paths.items()}
+            raise FileNotFoundError(
+                f"Ficheiro obrigatório em falta: {path}"
+            )
+
+    dados = {
+        nome: pd.read_csv(path)
+        for nome, path in paths.items()
+    }
+
     for nome in ["doentes", "cirurgias", "laboratorio"]:
         faltam = set(REQUIRED[nome]) - set(dados[nome].columns)
+
         if faltam:
-            raise ValueError(f"{nome}: colunas obrigatórias em falta: {sorted(faltam)}")
+            raise ValueError(
+                f"{nome}: colunas obrigatórias em falta: {sorted(faltam)}"
+            )
+
     for nome in ["monitorizacao_A", "monitorizacao_B"]:
         faltam = set(REQUIRED["monitorizacao"]) - set(dados[nome].columns)
+
         if faltam:
-            raise ValueError(f"{nome}: colunas obrigatórias em falta: {sorted(faltam)}")
+            raise ValueError(
+                f"{nome}: colunas obrigatórias em falta: {sorted(faltam)}"
+            )
+
     return dados
 
 
@@ -88,24 +104,53 @@ def auditar_fontes(dados):
 
 
 def auditar_duplicados(dados):
+    """Analisa duplicados sem criar ficheiros auxiliares."""
+
     registos = []
+
     definicoes = [
         ("doentes", dados["doentes"], ["doente_id"]),
         ("cirurgias", dados["cirurgias"], ["cirurgia_id"]),
-        ("laboratorio", dados["laboratorio"], ["cirurgia_id", "tempo_relativo_h", "analito"]),
-        ("monitorizacao_A", dados["monitorizacao_A"], ["cirurgia_id", "tempo_min", "parametro"]),
-        ("monitorizacao_B", dados["monitorizacao_B"], ["cirurgia_id", "tempo_min", "parametro"]),
+        (
+            "laboratorio",
+            dados["laboratorio"],
+            ["cirurgia_id", "tempo_relativo_h", "analito"]
+        ),
+        (
+            "monitorizacao_A",
+            dados["monitorizacao_A"],
+            ["cirurgia_id", "tempo_min", "parametro"]
+        ),
+        (
+            "monitorizacao_B",
+            dados["monitorizacao_B"],
+            ["cirurgia_id", "tempo_min", "parametro"]
+        ),
     ]
+
     for nome, df, chave in definicoes:
         exatos = int(df.duplicated().sum())
+
         sem_exatos = df.drop_duplicates()
-        dup_log = sem_exatos[sem_exatos.duplicated(chave, keep=False)]
-        grupos = int(dup_log.groupby(chave, dropna=False).ngroups) if not dup_log.empty else 0
-        registos.append({"fonte": nome, "chave_logica": "+".join(chave),
-                         "duplicados_exatos_excesso": exatos,
-                         "grupos_chave_logica_com_conteudo_distinto": grupos,
-                         "linhas_envolvidas_nesses_grupos": len(dup_log)})
-    pd.DataFrame(registos).to_csv(OUT / "auditoria_duplicados.csv", index=False)
+
+        dup_log = sem_exatos[
+            sem_exatos.duplicated(chave, keep=False)
+        ]
+
+        grupos = (
+            int(dup_log.groupby(chave, dropna=False).ngroups)
+            if not dup_log.empty else 0
+        )
+
+        registos.append({
+            "fonte": nome,
+            "chave_logica": "+".join(chave),
+            "duplicados_exatos_excesso": exatos,
+            "grupos_chave_logica_com_conteudo_distinto": grupos,
+            "linhas_envolvidas_nesses_grupos": len(dup_log)
+        })
+
+    return pd.DataFrame(registos)
 
 
 def normalizar_texto(df, colunas):
@@ -147,29 +192,14 @@ def normalizar_categorias(dados):
     doentes["idade"] = pd.to_numeric(doentes["idade"], errors="raise").astype("Int64")
     cir["asa"] = pd.to_numeric(cir["asa"], errors="raise").astype("Int64")
     cir["duracao_anestesia_min"] = pd.to_numeric(cir["duracao_anestesia_min"], errors="raise").astype("Int64")
-    # Regista categorias observadas antes/depois para tornar a normalização rastreável.
-    transformacoes = []
-    pares = [("doentes", dados["doentes"], doentes, ["sexo"]),
-             ("cirurgias", dados["cirurgias"], cir, ["especialidade", "abordagem", "tipo_anestesia", "urgencia"]),
-             ("laboratorio", dados["laboratorio"], lab, ["analito"])]
-    for fonte, antes_df, depois_df, cols in pares:
-        for col in cols:
-            pares_cat = pd.DataFrame({
-                "representacao_original": antes_df[col].astype("string").fillna("<NA>").values,
-                "categoria_normalizada": depois_df[col].astype("string").fillna("<NA>").values,
-            })
-            contagens = pares_cat.value_counts(dropna=False).reset_index(name="n_registos")
-            for _, x in contagens.iterrows():
-                transformacoes.append({"fonte": fonte, "variavel": col,
-                                       "representacao_original": x.representacao_original,
-                                       "categoria_normalizada": x.categoria_normalizada,
-                                       "n_registos": int(x.n_registos)})
-    pd.DataFrame(transformacoes).to_csv(OUT / "transformacoes_categoricas.csv", index=False)
-    # Valores ASA fora do intervalo convencional 1–5 são sinalizados, não corrigidos.
-    anom_asa = cir.loc[cir.asa.notna() & ~cir.asa.between(1, 5), ["cirurgia_id", "asa"]].copy()
-    anom_asa["observacao"] = "ASA fora do intervalo 1-5; preservado para validação da fonte"
-    anom_asa.to_csv(OUT / "anomalias_categoricas.csv", index=False)
-    return doentes, cir, lab, mon
+    #
+    anom_asa = cir.loc[
+        cir.asa.notna() & ~cir.asa.between(1, 5),
+        ["cirurgia_id", "asa"]
+    ].copy()
+
+    return doentes, cir, lab, mon, anom_asa
+
 
 
 def remover_duplicados_seguros(df, nome, chave):
@@ -188,19 +218,26 @@ def remover_duplicados_seguros(df, nome, chave):
 
 
 def validar_ids_fontes(dados, cirurgias):
-    """Audita integridade referencial sem descartar registos silenciosamente."""
+    """Verifica a integridade referencial sem exportar CSV auxiliar."""
+
     ids_cir = set(cirurgias.cirurgia_id.dropna().astype(str))
+
     fontes = {
         "laboratorio": dados["laboratorio"],
         "monitorizacao_A": dados["monitorizacao_A"],
         "monitorizacao_B": dados["monitorizacao_B"],
     }
+
     linhas = []
     desconhecidos = []
+
     for nome, df in fontes.items():
+
         ids_fonte = set(df.cirurgia_id.dropna().astype(str))
+
         orfaos = sorted(ids_fonte - ids_cir)
         sem_registo = sorted(ids_cir - ids_fonte)
+
         linhas.append({
             "fonte": nome,
             "n_ids_fonte": len(ids_fonte),
@@ -208,11 +245,17 @@ def validar_ids_fontes(dados, cirurgias):
             "n_ids_sem_cirurgia_correspondente": len(orfaos),
             "n_cirurgias_sem_registo_na_fonte": len(sem_registo),
             "ids_sem_correspondencia": ";".join(orfaos),
-            "cirurgias_sem_registo": ";".join(sem_registo),
+            "cirurgias_sem_registo": ";".join(sem_registo)
         })
+
         desconhecidos.extend((nome, x) for x in orfaos)
-    # A concatenação A+B é também auditada como uma única fonte lógica.
-    ids_mon = set(fontes["monitorizacao_A"].cirurgia_id.dropna().astype(str)) | set(fontes["monitorizacao_B"].cirurgia_id.dropna().astype(str))
+
+    ids_mon = (
+        set(fontes["monitorizacao_A"].cirurgia_id.dropna().astype(str))
+        |
+        set(fontes["monitorizacao_B"].cirurgia_id.dropna().astype(str))
+    )
+
     linhas.append({
         "fonte": "monitorizacao_A+B",
         "n_ids_fonte": len(ids_mon),
@@ -220,50 +263,115 @@ def validar_ids_fontes(dados, cirurgias):
         "n_ids_sem_cirurgia_correspondente": len(ids_mon - ids_cir),
         "n_cirurgias_sem_registo_na_fonte": len(ids_cir - ids_mon),
         "ids_sem_correspondencia": ";".join(sorted(ids_mon - ids_cir)),
-        "cirurgias_sem_registo": ";".join(sorted(ids_cir - ids_mon)),
+        "cirurgias_sem_registo": ";".join(sorted(ids_cir - ids_mon))
     })
-    pd.DataFrame(linhas).to_csv(OUT / "auditoria_ids.csv", index=False)
+
     if desconhecidos:
-        detalhe = ", ".join(f"{fonte}:{cid}" for fonte, cid in desconhecidos)
-        raise ValueError("Foram encontrados cirurgia_id sem correspondência na tabela de cirurgias: " + detalhe)
+        detalhe = ", ".join(
+            f"{fonte}:{cid}" for fonte, cid in desconhecidos
+        )
+
+        raise ValueError(
+            "Foram encontrados cirurgia_id sem correspondência: "
+            + detalhe
+        )
+
     return pd.DataFrame(linhas)
 
 
 def auditar_categorias_e_unidades(dados):
-    """Exporta frequências das categorias e coerência das unidades observadas."""
+    """Devolve as auditorias para serem incluídas no resumo."""
+
     linhas = []
+
     configuracao = [
         ("doentes", dados["doentes"], ["sexo"]),
-        ("cirurgias", dados["cirurgias"], ["especialidade", "abordagem", "tipo_anestesia", "urgencia", "asa"]),
+        (
+            "cirurgias",
+            dados["cirurgias"],
+            ["especialidade", "abordagem", "tipo_anestesia", "urgencia", "asa"]
+        ),
         ("laboratorio", dados["laboratorio"], ["analito", "unidade"]),
         ("monitorizacao_A", dados["monitorizacao_A"], ["parametro", "unidade"]),
         ("monitorizacao_B", dados["monitorizacao_B"], ["parametro", "unidade"]),
     ]
+
     for fonte, df, colunas in configuracao:
         for coluna in colunas:
-            cont = df[coluna].astype("string").fillna("<NA>").value_counts(dropna=False)
+
+            cont = (
+                df[coluna]
+                .astype("string")
+                .fillna("<NA>")
+                .value_counts(dropna=False)
+            )
+
             for categoria, n in cont.items():
-                linhas.append({"fonte": fonte, "variavel": coluna,
-                               "categoria_ou_unidade": str(categoria), "n_registos": int(n)})
-    pd.DataFrame(linhas).to_csv(OUT / "auditoria_categorias.csv", index=False)
+                linhas.append({
+                    "fonte": fonte,
+                    "variavel": coluna,
+                    "categoria_ou_unidade": str(categoria),
+                    "n_registos": int(n)
+                })
+
+    auditoria_categorias = pd.DataFrame(linhas)
 
     validacoes = []
+
     for fonte in ["monitorizacao_A", "monitorizacao_B"]:
         df = dados[fonte]
+
         for parametro, unidade_esperada in UNIDADES_MONITORIZACAO.items():
-            sub = df.loc[df.parametro.astype("string").str.strip().str.casefold().eq(parametro.casefold())]
-            for unidade, n in sub.unidade.astype("string").str.strip().value_counts(dropna=False).items():
-                validacoes.append({"fonte": fonte, "variavel": "unidade", "parametro_analito": parametro,
-                                   "unidade_observada": str(unidade), "unidade_esperada": unidade_esperada,
-                                   "n_registos": int(n), "coerente": str(unidade) == unidade_esperada})
+
+            sub = df.loc[
+                df.parametro.astype("string")
+                .str.strip()
+                .str.casefold()
+                .eq(parametro.casefold())
+            ]
+
+            for unidade, n in (
+                sub.unidade.astype("string")
+                .str.strip()
+                .value_counts(dropna=False)
+                .items()
+            ):
+                validacoes.append({
+                    "fonte": fonte,
+                    "parametro_analito": parametro,
+                    "unidade_observada": str(unidade),
+                    "unidade_esperada": unidade_esperada,
+                    "n_registos": int(n),
+                    "coerente": str(unidade) == unidade_esperada
+                })
+
     lab = dados["laboratorio"]
+
     for analito, unidade_esperada in UNIDADES_LABORATORIO.items():
-        sub = lab.loc[lab.analito.astype("string").str.strip().str.casefold().eq(analito.casefold())]
-        for unidade, n in sub.unidade.astype("string").str.strip().value_counts(dropna=False).items():
-            validacoes.append({"fonte": "laboratorio", "variavel": "unidade", "parametro_analito": analito,
-                               "unidade_observada": str(unidade), "unidade_esperada": unidade_esperada,
-                               "n_registos": int(n), "coerente": str(unidade) == unidade_esperada})
-    pd.DataFrame(validacoes).to_csv(OUT / "auditoria_unidades.csv", index=False)
+
+        sub = lab.loc[
+            lab.analito.astype("string")
+            .str.strip()
+            .str.casefold()
+            .eq(analito.casefold())
+        ]
+
+        for unidade, n in (
+            sub.unidade.astype("string")
+            .str.strip()
+            .value_counts(dropna=False)
+            .items()
+        ):
+            validacoes.append({
+                "fonte": "laboratorio",
+                "parametro_analito": analito,
+                "unidade_observada": str(unidade),
+                "unidade_esperada": unidade_esperada,
+                "n_registos": int(n),
+                "coerente": str(unidade) == unidade_esperada
+            })
+
+    return auditoria_categorias, pd.DataFrame(validacoes)
 
 
 def preparar_monitorizacao(mon_a, mon_b, cirurgias):
@@ -309,7 +417,7 @@ def preparar_monitorizacao(mon_a, mon_b, cirurgias):
         n_registos=("valor", "size"), n_validos=("valor_utilizavel", "sum")
     ).reset_index()
     auditoria["n_invalidos"] = auditoria["n_registos"] - auditoria["n_validos"]
-    auditoria.to_csv(OUT / "auditoria_monitorizacao.csv", index=False)
+
 
     chave = ["cirurgia_id", "tempo_min", "parametro"]
     # A chave lógica só pode ser única depois de remover duplicados integrais.
@@ -332,7 +440,6 @@ def preparar_monitorizacao(mon_a, mon_b, cirurgias):
     wide = reconhecidos.pivot(index=["cirurgia_id", "tempo_min"], columns="parametro", values="valor")
     wide.columns.name = None
     wide_reset = wide.reset_index()
-    wide_reset.to_csv(OUT / "monitorizacao_wide.csv", index=False)
     back = wide.stack(future_stack=True).dropna().rename("valor").reset_index()
     back.columns = ["cirurgia_id", "tempo_min", "parametro", "valor"]
     original = reconhecidos.loc[reconhecidos.valor.notna(), chave + ["valor"]].sort_values(chave).reset_index(drop=True)
@@ -352,7 +459,6 @@ def preparar_laboratorio(lab, cir_ids):
     logicos = lab[lab.duplicated(["cirurgia_id", "tempo_relativo_h", "analito"], keep=False)].copy()
     if not logicos.empty:
         logicos["observacao"] = "chave lógica repetida; conteúdo distinto preservado para investigação"
-    logicos.to_csv(OUT / "duplicados_logicos_laboratorio.csv", index=False)
     eleg = lab.loc[lab.tempo_relativo_h.between(-24, 0, inclusive="both")].copy()
     rows, conflitos = [], []
     for cid in cir_ids:
@@ -397,8 +503,6 @@ def preparar_laboratorio(lab, cir_ids):
     if prep.cirurgia_id.duplicated().any():
         raise AssertionError("A tabela laboratorial pivotada deve ter no máximo uma linha por cirurgia.")
     prep.to_csv(OUT / "laboratorio_preoperatorio.csv", index=False)
-    pd.DataFrame(conflitos, columns=["cirurgia_id", "analito", "tempo_relativo_h", "valor", "unidade", "decisao"]).to_csv(
-        OUT / "conflitos_laboratorio.csv", index=False)
     n_grupos_conflito = len({(x["cirurgia_id"], x["analito"], x["tempo_relativo_h"]) for x in conflitos})
     return prep, eleg, n_exact, n_grupos_conflito
 
@@ -569,7 +673,7 @@ def gerar_visualizacoes(integrado, mon, resumo):
     return escolhido, len(d), len(d4), len(d5)
 
 
-def escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, resumo, integrado,
+def escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, anom_asa, resumo, integrado,
                     merge_info, removidos_mon, removidos_lab, conflitos_lab, figura_info):
     escolhido, n_cov, n_grupos, n_hb = figura_info
     lines = [
@@ -609,6 +713,7 @@ def escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, resumo, integrado,
         "- Regras técnicas de utilização: FC > 0 e <= 300; PAM > 0 e <= 300; SpO2 entre 0 e 100. São regras operacionais, não limites clínicos universais.",
         "- Observações extremas pelo critério IQR são sinalizadas, não removidas automaticamente.",
         "- CIR0096 tem ASA=6, fora do intervalo convencional 1-5; o valor foi preservado e sinalizado em anomalias_categoricas.csv. Existem ainda 4 valores ASA em falta.",
+        f"Registos com ASA fora do intervalo convencional (1-5): {len(anom_asa)}",
         f"- Cobertura suficiente definida operacionalmente como n_minutos_pam_validos / duracao_anestesia_min >= {COVERAGE_THRESHOLD:.0%}.",
         "- A percentagem PAM <65 usa exclusivamente minutos com PAM válida no denominador; lacunas não são consideradas normais.",
         f"- Episódio usado na trajetória temporal: {escolhido}.",
@@ -623,7 +728,7 @@ def main():
     dados = carregar_fontes()
     auditar_fontes(dados)
     auditar_duplicados(dados)
-    doentes, cir, lab, mon_src = normalizar_categorias(dados)
+    doentes, cir, lab, mon_src, anom_asa = normalizar_categorias(dados)
     # Unicidade de entidades: as linhas repetidas só são eliminadas quando integralmente iguais.
     doentes, dup_doentes = remover_duplicados_seguros(doentes, "doentes", ["doente_id"])
     cir, dup_cir = remover_duplicados_seguros(cir, "cirurgias", ["cirurgia_id"])
@@ -636,8 +741,9 @@ def main():
     hemo = calcular_metricas_hemodinamicas(mon, cir)
     integrado, merge_info = integrar_dados(cir, doentes, lab_pre, hemo)
     figura_info = gerar_visualizacoes(integrado, mon, hemo)
-    escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, hemo, integrado,
+    escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, anom_asa, hemo, integrado,
                     merge_info, dup_mon, dup_lab, conflitos_lab, figura_info)
+
     # Registo explícito das repetições nas entidades.
     (OUT / "decisoes_duplicados.txt").write_text(
         f"doentes.csv: {dup_doentes} linhas integralmente repetidas removidas.\n"
