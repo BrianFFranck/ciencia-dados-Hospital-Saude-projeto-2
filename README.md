@@ -21,7 +21,7 @@ Integrar cinco fontes perioperatórias pseudonimizadas (doentes, cirurgias, labo
 ## Requisitos
 
 - Python ≥ 3.10
-- pandas ≥ 2.1 (usa `stack(future_stack=True)`)
+- pandas ≥ 2.1
 - numpy
 - matplotlib
 - seaborn
