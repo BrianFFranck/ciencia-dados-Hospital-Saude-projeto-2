@@ -11,10 +11,10 @@
 
 Este software e a documentação associada foram desenvolvidos exclusivamente para fins de avaliação académica por:
 
-* **Estudante 1:** Rafael Pereira-Nº
-* **Estudante 2:** Filipe Lopes-Nº
+* **Estudante 1:** Rafael Pereira-Nº22507906
+* **Estudante 2:** Filipe Lopes-Nº22508487
 * **Estudante 3:** Brian Franck-Nº22502756
-* **Estudante 4:** Bernardo Margarido-Nº
+* **Estudante 4:** Bernardo Margarido-Nº22508039
 
 Os autores detêm os direitos morais e de propriedade intelectual sobre o código-fonte original deste projeto, em conformidade com o *Regulamento de Avaliação de Conhecimentos e Competências* e o *Código de Direitos de Autor e Direitos Conexos* em vigor em Portugal.
 
