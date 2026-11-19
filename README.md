@@ -9,7 +9,7 @@
 
 | Nome | Número |
 |------|--------|
-| [Rafael Alves Pereira] | [nº] |
+| [Rafael Alves Pereira] | [nº22507906] |
 | [Bernardo Esteves Margarido] | [nº] |
 | [Brian Ferrari Franck] | [nº22502756] |
 | [Filipe Lopes] | [nº] |
