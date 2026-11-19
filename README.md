@@ -40,7 +40,7 @@ Na raiz do projeto:
 python main.py
 ```
 
-Os caminhos são relativos ao próprio `main.py` e o programa não precisa de Internet. Lê `data/`, que nunca é alterada, e recria tudo em `outputs/`. O programa pára com uma mensagem explícita se:
+Os caminhos são relativos ao próprio `main.py` e o programa não precisa de Internet. Lê `data/`, que nunca é alterada, e recria tudo em `outputs/`. O programa para com uma mensagem explícita se:
 - faltar um ficheiro ou uma coluna obrigatória;
 - uma chave lógica se repetir com conteúdo diferente;
 - existir um `cirurgia_id` sem cirurgia correspondente;
