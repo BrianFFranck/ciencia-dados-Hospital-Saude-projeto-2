@@ -755,6 +755,7 @@ def escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, anom_asa, resumo, i
                     merge_info, removidos_mon, removidos_lab, conflitos_lab, figura_info):
     """Gera o relatório príncipal"""
     escolhido, n_cov, n_grupos, n_hb = figura_info
+
     lines = [
         "RESUMO DE INTEGRAÇÃO — VÍDEO-CASO 2 (ANESTESIOLOGIA)",
         "====================================================",
