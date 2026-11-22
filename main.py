@@ -577,17 +577,51 @@ def gerar_visualizacoes(integrado, mon, resumo):
     sns.set_theme(context="notebook", style="whitegrid")
     # Figura 1: percentagem de missing data por variável e fonte
     aud = pd.read_csv(OUT / "auditoria_fontes.csv")
-    aud = aud.loc[aud.variavel.isin(["idade", "sexo", "altura_cm", "peso_kg", "asa",
-                                    "tipo_anestesia", "especialidade", "abordagem", "urgencia",
-                                    "valor", "tempo_relativo_h", "tempo_min", "parametro", "unidade"])]
-    aud = aud.loc[aud.percentagem_missing.gt(0)].copy()
-    aud["rotulo"] = aud.origem + " · " + aud.variavel
-    aud = aud.sort_values("percentagem_missing", ascending=True)
-    fig, ax = plt.subplots(figsize=(11, 8))
-    ax.barh(aud.rotulo, aud.percentagem_missing)
-    ax.set(xlabel="Valores em falta (%)", ylabel="Fonte · variável",
-           title="Qualidade dos dados: proporção de valores em falta")
-    fig.tight_layout(); fig.savefig(FIG / "fig01_qualidade_dados.png", dpi=300); plt.close(fig)
+    aud = aud.loc[~aud.variavel.isin(["doente_id", "cirurgia_id"])].copy()
+    ordem_fontes = ["doentes", "cirurgias", "laboratorio", "monitorizacao_A", "monitorizacao_B"]
+    aud["ordem"] = aud.origem.map({f: i for i, f in enumerate(ordem_fontes)})
+    aud = aud.sort_values(["ordem", "percentagem_missing"], ascending=[True, False])
+
+    # Posição vertical de cada barra: um título por fonte e um espaço entre grupos.
+    posicoes, titulos, pos = [], [], 0.0
+    for origem, grupo in aud.groupby("origem", sort=False):
+        titulos.append((pos, f"{origem} ({grupo.n_linhas_fonte.iloc[0]} linhas)"))
+        pos += 1.0
+        for _ in range(len(grupo)):
+            posicoes.append(pos)
+            pos += 1.0
+        pos += 0.5
+    aud["y"] = posicoes
+
+    cores = dict(zip(ordem_fontes, sns.color_palette("colorblind", len(ordem_fontes))))
+    xmax = aud.percentagem_missing.max()
+    fig, ax = plt.subplots(figsize=(10, 9))
+    ax.barh(aud.y, aud.percentagem_missing, height=0.65, color=aud.origem.map(cores))
+    for _, r in aud.iterrows():
+        if r.n_missing:
+            texto, cor = (
+                f"{r.percentagem_missing:.2f}% ({r.n_missing} de {r.n_linhas_fonte})",
+                "black",
+            )
+        else:
+            texto, cor = "0% (completa)", "gray"
+        ax.text(
+            r.percentagem_missing + xmax * 0.012, r.y, texto, va="center", fontsize=8.5, color=cor
+        )
+    for y_titulo, texto in titulos:
+        ax.text(xmax * 0.012, y_titulo, texto, va="center", fontsize=10, fontweight="bold")
+    ax.set_yticks(aud.y, aud.variavel)
+    ax.invert_yaxis()
+    ax.set_xlim(0, xmax * 1.4)
+    ax.grid(axis="y", visible=False)
+    ax.set(
+        xlabel="Valores em falta (% das linhas de cada fonte)",
+        ylabel="",
+        title="Qualidade dos dados: percentagem de valores em falta por fonte e variável",
+    )
+    fig.tight_layout()
+    fig.savefig(FIG / "fig01_qualidade_dados.png", dpi=300)
+    plt.close(fig)
 
     # Figura 2: episódio com melhor cobertura conjunta dos três parâmetros
     cov = mon.loc[mon.valor_utilizavel].groupby(["cirurgia_id", "parametro"]).size().unstack(fill_value=0)
@@ -630,19 +664,65 @@ def gerar_visualizacoes(integrado, mon, resumo):
     fig.tight_layout(); fig.savefig(FIG / "fig03_distribuicao_pam_baixa.png", dpi=300); plt.close(fig)
 
     # Figura 4: boxplot por especialidade e categorias com dimensão suficiente
-    d4 = integrado.loc[integrado.cobertura_pam_suficiente & integrado.percentagem_pam_lt65.notna()].copy()
+    d4 = integrado.loc[
+        integrado.cobertura_pam_suficiente & integrado.percentagem_pam_lt65.notna()
+    ].copy()
     counts = d4.especialidade.value_counts()
     cats = counts[counts >= 5].index
     d4 = d4.loc[d4.especialidade.isin(cats)]
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(10, 5.5))
     if not d4.empty:
-        sns.boxplot(data=d4, x="especialidade", y="percentagem_pam_lt65", ax=ax)
-        ax.tick_params(axis="x", rotation=20)
+        ordem = (
+            d4.groupby("especialidade").percentagem_pam_lt65.median().sort_values(ascending=False)
+        )
+        rotulos = [f"{e}\n(n={counts[e]})" for e in ordem.index]
+        sns.boxplot(
+            data=d4,
+            x="especialidade",
+            y="percentagem_pam_lt65",
+            order=ordem.index,
+            color="#c6dbef",
+            width=0.55,
+            showfliers=False,  # os outliers já aparecem como pontos do stripplot
+            medianprops={"color": "black", "linewidth": 2},
+            ax=ax,
+        )
+        np.random.seed(42)  # o jitter do stripplot é aleatório: seed para figura reprodutível
+        sns.stripplot(
+            data=d4,
+            x="especialidade",
+            y="percentagem_pam_lt65",
+            order=ordem.index,
+            color="#08306b",
+            size=3.5,
+            alpha=0.6,
+            jitter=0.18,
+            ax=ax,
+        )
+        for i, mediana in enumerate(ordem):
+            ax.text(i + 0.3, mediana, f"mediana {mediana:.1f}%", va="center", fontsize=8.5)
+        ax.set_xticks(range(len(ordem)), rotulos)
+        ax.set_ylim(-1, d4.percentagem_pam_lt65.max() * 1.08)
     else:
-        ax.text(.5, .5, "Sem grupos com dimensão suficiente", ha="center", va="center", transform=ax.transAxes)
-    ax.set(xlabel="Especialidade", ylabel="Minutos observados com PAM <65 mmHg (%)",
-           title="Carga observada de PAM baixa por especialidade")
-    fig.tight_layout(); fig.savefig(FIG / "fig04_comparacao_grupos.png", dpi=300); plt.close(fig)
+        ax.text(
+            0.5,
+            0.5,
+            "Sem grupos com dimensão suficiente",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    ax.set(
+        xlabel="Especialidade",
+        ylabel="Minutos observados com PAM <65 mmHg (%)",
+        title=(
+            "Carga observada de PAM baixa por especialidade\n"
+            f"(cirurgias com cobertura PAM ≥{COVERAGE_THRESHOLD:.0%}; cada ponto = uma cirurgia)"
+        ),
+    )
+    fig.tight_layout()
+    fig.savefig(FIG / "fig04_comparacao_grupos.png", dpi=300)
+    plt.close(fig)
 
     # Figura 5: Hb pré-operatória vs carga observada de PAM baixa
     d5 = integrado.loc[integrado.hemoglobina_preoperatoria.notna() &
