@@ -18,8 +18,7 @@ OUT = ROOT / "outputs"
 FIG = OUT / "figuras"
 
 # Regras operacionais explícitas. São filtros técnicos conservadores, não limites
-# clínicos universais. Valores extremos dentro destes limites são sinalizados,
-# mas não eliminados automaticamente.
+# Valores extremos dentro destes limites são sinalizados,mas não eliminados automaticamente.
 VALID_RANGE = {
     "FC": (0.0, 300.0),       # zero não é tratado como frequência observada utilizável
     "PAM": (0.0, 300.0),      # valores <= 0 não são utilizáveis como PAM
@@ -48,7 +47,7 @@ def carregar_fontes():
         "monitorizacao_B": DATA / "monitorizacao_B.csv",
     }
 
-    for nome, path in paths.items():
+    for nome, path in paths.items():            #clause guards
         if not path.exists():
             raise FileNotFoundError(
                 f"Ficheiro obrigatório em falta: {path}"
@@ -203,7 +202,7 @@ def normalizar_categorias(dados):
 
 
 def remover_duplicados_seguros(df, nome, chave):
-    """Remove só linhas integralmente iguais; falha se a chave lógica conflitar."""
+    """Remove só linhas integralmente iguais; falha se a chave conflitar."""
     antes = len(df)
     limpo = df.drop_duplicates().copy()
     repeticoes_exatas = antes - len(limpo)
@@ -383,7 +382,7 @@ def preparar_monitorizacao(mon_a, mon_b, cirurgias):
     if set(a.cirurgia_id.dropna()) & set(b.cirurgia_id.dropna()):
         warnings.warn("Existem cirurgia_id nos dois blocos; verificar sobreposição.")
 
-    # Validação técnica preservando as colunas originais e registando motivos.
+    # Validação técnica preservando as colunas originais e registando motivos
     combinado["tempo_min_original"] = combinado["tempo_min"]
     combinado["tempo_min"] = pd.to_numeric(combinado["tempo_min"], errors="coerce")
     tempo_inteiro = combinado.tempo_min.notna() & np.isclose(combinado.tempo_min.fillna(0) % 1, 0)
@@ -412,7 +411,7 @@ def preparar_monitorizacao(mon_a, mon_b, cirurgias):
     combinado.loc[~combinado.tempo_valido, "motivo_validacao"] = "tempo inválido: deve ser inteiro e não negativo"
     combinado.loc[combinado.valor.isna(), "motivo_validacao"] = "valor em falta ou não numérico"
 
-    # Auditoria por parâmetro e motivo; nenhuma observação inválida é apagada.
+    # Auditoria por parâmetro e motivo, nenhuma observação inválida é apagada
     auditoria = combinado.groupby(["parametro", "motivo_validacao"], dropna=False).agg(
         n_registos=("valor", "size"), n_validos=("valor_utilizavel", "sum")
     ).reset_index()
@@ -576,7 +575,7 @@ def integrar_dados(cir, doentes, lab_pre, hemo):
 
 def gerar_visualizacoes(integrado, mon, resumo):
     sns.set_theme(context="notebook", style="whitegrid")
-    # Figura 1: percentagem de missing por variável e fonte (denominadores separados).
+    # Figura 1: percentagem de missing data por variável e fonte
     aud = pd.read_csv(OUT / "auditoria_fontes.csv")
     aud = aud.loc[aud.variavel.isin(["idade", "sexo", "altura_cm", "peso_kg", "asa",
                                     "tipo_anestesia", "especialidade", "abordagem", "urgencia",
@@ -590,14 +589,13 @@ def gerar_visualizacoes(integrado, mon, resumo):
            title="Qualidade dos dados: proporção de valores em falta")
     fig.tight_layout(); fig.savefig(FIG / "fig01_qualidade_dados.png", dpi=300); plt.close(fig)
 
-    # Figura 2: episódio com melhor cobertura conjunta dos três parâmetros.
+    # Figura 2: episódio com melhor cobertura conjunta dos três parâmetros
     cov = mon.loc[mon.valor_utilizavel].groupby(["cirurgia_id", "parametro"]).size().unstack(fill_value=0)
     cov = cov.reindex(columns=["PAM", "FC", "SpO2"], fill_value=0)
     dur = integrado.set_index("cirurgia_id").duracao_anestesia_min
     cov_ratio = cov.div(dur, axis=0)
     cov_ratio["min_cobertura"] = cov_ratio[["PAM", "FC", "SpO2"]].min(axis=1)
-    # Escolhe um episódio com cobertura adequada e maior carga observada de PAM baixa,
-    # para que a trajetória ilustre também o limiar operacional de 65 mmHg.
+    # Escolhe um episódio com cobertura mais adequada e maior carga observada de PAM baixa, para que a trajetória ilustre também o limiar de 65 mmHg
     candidatos = resumo.set_index("cirurgia_id").join(cov_ratio[["min_cobertura"]])
     candidatos = candidatos.loc[candidatos.min_cobertura.ge(COVERAGE_THRESHOLD)]
     escolhido = candidatos.percentagem_pam_lt65.idxmax()
@@ -620,7 +618,7 @@ def gerar_visualizacoes(integrado, mon, resumo):
     fig.tight_layout(); fig.savefig(FIG / "fig02_trajetoria_intraoperatoria.png", dpi=300, bbox_inches="tight")
     fig.savefig(FIG / "fig02_trajetoria_intraoperatoria.svg", bbox_inches="tight"); plt.close(fig)
 
-    # Figura 3: histograma apenas com cobertura PAM >= 80% da duração registada.
+    # Figura 3: histograma apenas com cobertura PAM >= 80% da duração registada
     d = resumo.loc[resumo.cobertura_pam_suficiente & resumo.percentagem_pam_lt65.notna(), "percentagem_pam_lt65"]
     fig, ax = plt.subplots(figsize=(9, 5))
     if len(d):
@@ -631,7 +629,7 @@ def gerar_visualizacoes(integrado, mon, resumo):
            title=f"Distribuição da carga observada de PAM baixa (cobertura ≥{COVERAGE_THRESHOLD:.0%})")
     fig.tight_layout(); fig.savefig(FIG / "fig03_distribuicao_pam_baixa.png", dpi=300); plt.close(fig)
 
-    # Figura 4: boxplot por especialidade; categorias com dimensão suficiente.
+    # Figura 4: boxplot por especialidade e categorias com dimensão suficiente
     d4 = integrado.loc[integrado.cobertura_pam_suficiente & integrado.percentagem_pam_lt65.notna()].copy()
     counts = d4.especialidade.value_counts()
     cats = counts[counts >= 5].index
@@ -646,7 +644,7 @@ def gerar_visualizacoes(integrado, mon, resumo):
            title="Carga observada de PAM baixa por especialidade")
     fig.tight_layout(); fig.savefig(FIG / "fig04_comparacao_grupos.png", dpi=300); plt.close(fig)
 
-    # Figura 5: Hb pré-operatória vs carga observada de PAM baixa.
+    # Figura 5: Hb pré-operatória vs carga observada de PAM baixa
     d5 = integrado.loc[integrado.hemoglobina_preoperatoria.notna() &
                        integrado.percentagem_pam_lt65.notna() & integrado.cobertura_pam_suficiente]
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -661,7 +659,7 @@ def gerar_visualizacoes(integrado, mon, resumo):
            title="Associação exploratória: Hemoglobina e PAM baixa")
     fig.tight_layout(); fig.savefig(FIG / "fig05_hb_pam.png", dpi=300); plt.close(fig)
 
-    # Figura 6: distribuição normalizada de urgência por especialidade (pergunta distinta).
+    # Figura 6: distribuição normalizada de urgência por especialidade
     tab = pd.crosstab(integrado.especialidade, integrado.urgencia, normalize="index") * 100
     fig, ax = plt.subplots(figsize=(9, 5))
     tab.plot(kind="bar", stacked=True, ax=ax)
@@ -675,6 +673,7 @@ def gerar_visualizacoes(integrado, mon, resumo):
 
 def escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, anom_asa, resumo, integrado,
                     merge_info, removidos_mon, removidos_lab, conflitos_lab, figura_info):
+    """Gera o relatório príncipal"""
     escolhido, n_cov, n_grupos, n_hb = figura_info
     lines = [
         "RESUMO DE INTEGRAÇÃO — VÍDEO-CASO 2 (ANESTESIOLOGIA)",
@@ -692,33 +691,31 @@ def escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, anom_asa, resumo, i
         f"Duplicados exatos removidos do laboratório: {removidos_lab}",
         f"Cirurgias com pelo menos uma PAM válida: {(resumo.n_minutos_pam_validos > 0).sum()}",
         f"Cirurgias com cobertura PAM >= {COVERAGE_THRESHOLD:.0%}: {n_cov}",
-        f"Cirurgias sem laboratório pré-operatório de Hemoglobina: {lab_pre.hemoglobina_preoperatoria.isna().sum()}",
-        f"Cirurgias sem laboratório pré-operatório de Creatinina: {lab_pre.creatinina_preoperatoria.isna().sum()}",
         f"Cirurgia_id único no dataset final: {integrado.cirurgia_id.is_unique}",
         f"Número final de linhas: {len(integrado)}",
         "",
         "VALIDAÇÃO DAS FONTES E JUNÇÕES",
-        "- Integridade referencial: consultar auditoria_ids.csv; IDs sem cirurgia correspondente fazem o pipeline parar.",
-        "- Categorias e unidades: consultar auditoria_categorias.csv e auditoria_unidades.csv.",
-        "- Qualidade da monitorização por parâmetro/motivo: consultar auditoria_monitorizacao.csv.",
+        "- Integridade referencial: consultar auditoria_ids.csv; IDs sem cirurgia correspondente fazem o pipeline parar",
+        "- Categorias e unidades: consultar auditoria_categorias.csv e auditoria_unidades.csv",
+        "- Qualidade da monitorização por parâmetro/motivo: consultar auditoria_monitorizacao.csv",
         f"Linhas de cirurgias antes do merge: {merge_info['linhas_cirurgias']}",
-        f"Após merge doentes (many_to_one): {merge_info['apos_merge_doentes']}",
-        f"Após merge laboratório (one_to_one): {merge_info['apos_merge_lab']} | {merge_info['merge_lab']}",
-        f"Após merge hemodinâmica (one_to_one): {merge_info['apos_merge_hemo']} | {merge_info['merge_hemo']}",
+        f"Após merge doentes: {merge_info['apos_merge_doentes']}",
+        f"Após merge laboratório: {merge_info['apos_merge_lab']} | {merge_info['merge_lab']}",
+        f"Após merge hemodinâmica: {merge_info['apos_merge_hemo']} | {merge_info['merge_hemo']}",
         "",
         "REGRAS E LIMITAÇÕES DOCUMENTADAS",
-        "- Só foram removidas repetições integralmente iguais, após auditoria da chave lógica.",
-        "- Conflitos laboratoriais no tempo mais recente não foram resolvidos arbitrariamente; o valor selecionado fica missing e os candidatos são exportados em conflitos_laboratorio.csv.",
-        "- Janela laboratorial: -24 <= tempo_relativo_h <= 0; seleção do maior tempo (mais próximo de zero).",
-        "- Regras técnicas de utilização: FC > 0 e <= 300; PAM > 0 e <= 300; SpO2 entre 0 e 100. São regras operacionais, não limites clínicos universais.",
-        "- Observações extremas pelo critério IQR são sinalizadas, não removidas automaticamente.",
-        "- CIR0096 tem ASA=6, fora do intervalo convencional 1-5; o valor foi preservado e sinalizado em anomalias_categoricas.csv. Existem ainda 4 valores ASA em falta.",
+        "- Só foram removidas repetições integralmente iguais, após auditoria da chave lógica",
+        "- Conflitos laboratoriais no tempo mais recente não foram resolvidos arbitrariamente; o valor selecionado fica missing e os candidatos são exportados em conflitos_laboratorio.csv",
+        "- Janela laboratorial: -24 <= tempo_relativo_h <= 0; seleção do maior tempo (mais próximo de zero)",
+        "- Regras técnicas de utilização: FC > 0 e <= 300; PAM > 0 e <= 300; SpO2 entre 0 e 100. São regras operacionais, não limites clínicos universais",
+        "- Observações extremas pelo critério IQR são sinalizadas, não removidas automaticamente",
+        "- CIR0096 tem ASA=6, fora do intervalo convencional 1-5;  o valor foi preservado e sinalizado em anomalias_categoricas.csv. Existem ainda 4 valores ASA em falta",
         f"Registos com ASA fora do intervalo convencional (1-5): {len(anom_asa)}",
-        f"- Cobertura suficiente definida operacionalmente como n_minutos_pam_validos / duracao_anestesia_min >= {COVERAGE_THRESHOLD:.0%}.",
-        "- A percentagem PAM <65 usa exclusivamente minutos com PAM válida no denominador; lacunas não são consideradas normais.",
-        f"- Episódio usado na trajetória temporal: {escolhido}.",
-        "- Figura adicional: composição percentual de urgência por especialidade.",
-        "- Não se fazem inferências causais nem modelos preditivos.",
+        f"- Cobertura suficiente definida operacionalmente como n_minutos_pam_validos / duracao_anestesia_min >= {COVERAGE_THRESHOLD:.0%}",
+        "- A percentagem PAM <65 usa exclusivamente minutos com PAM válida no denominador; lacunas não são consideradas normais",
+        f"- Episódio usado na trajetória temporal: {escolhido}",
+        "- Figura adicional: composição percentual de urgência por especialidade",
+        "- Não se fazem inferências causais nem modelos preditivos",
     ]
     (OUT / "resumo_integracao.txt").write_text("\n".join(lines), encoding="utf-8")
 
@@ -729,7 +726,8 @@ def main():
     auditar_fontes(dados)
     auditar_duplicados(dados)
     doentes, cir, lab, mon_src, anom_asa = normalizar_categorias(dados)
-    # Unicidade de entidades: as linhas repetidas só são eliminadas quando integralmente iguais.
+
+    # Unicidade de entidades: as linhas repetidas só são eliminadas quando integralmente iguais
     doentes, dup_doentes = remover_duplicados_seguros(doentes, "doentes", ["doente_id"])
     cir, dup_cir = remover_duplicados_seguros(cir, "cirurgias", ["cirurgia_id"])
     if doentes.doente_id.duplicated().any() or cir.cirurgia_id.duplicated().any():
@@ -744,14 +742,14 @@ def main():
     escrever_resumo(dados, doentes, cir, lab_pre, eleg, mon, anom_asa, hemo, integrado,
                     merge_info, dup_mon, dup_lab, conflitos_lab, figura_info)
 
-    # Registo explícito das repetições nas entidades.
+    # Registo explícito das repetições nas entidades
     (OUT / "decisoes_duplicados.txt").write_text(
-        f"doentes.csv: {dup_doentes} linhas integralmente repetidas removidas.\n"
-        f"cirurgias.csv: {dup_cir} linhas integralmente repetidas removidas.\n"
-        f"monitorizacao_A+B: {dup_mon} linhas integralmente repetidas removidas após concatenação.\n"
-        f"laboratorio.csv: {dup_lab} linhas integralmente repetidas removidas.\n"
-        "No laboratório, chaves lógicas repetidas com conteúdo distinto foram preservadas e exportadas para duplicados_logicos_laboratorio.csv; se o empate ocorrer na medição pré-operatória mais recente, o valor fica missing e os candidatos são exportados para conflitos_laboratorio.csv.\n"
-        "Nas tabelas de entidades e monitorização, conflitos de chave lógica impedem a execução até existir uma decisão explícita.\n",
+        f"doentes.csv: {dup_doentes} linhas integralmente repetidas removidas\n"
+        f"cirurgias.csv: {dup_cir} linhas integralmente repetidas removidas\n"
+        f"monitorizacao_A+B: {dup_mon} linhas integralmente repetidas removidas após concatenação\n"
+        f"laboratorio.csv: {dup_lab} linhas integralmente repetidas removidas\n"
+        "No laboratório, chaves lógicas repetidas com conteúdo distinto foram preservadas e exportadas para duplicados_logicos_laboratorio.csv; se o empate ocorrer na medição pré-operatória mais recente, o valor fica missing e os candidatos são exportados para conflitos_laboratorio.csv\n"
+        "Nas tabelas de entidades e monitorização, conflitos de chave lógica impedem a execução até existir uma decisão explícita\n",
         encoding="utf-8")
     print("Pipeline concluído com sucesso.")
     print(f"Dataset final: {len(integrado)} cirurgias; cirurgia_id único={integrado.cirurgia_id.is_unique}")
