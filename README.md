@@ -7,12 +7,12 @@
 
 **Grupo_4**
 
-| Nome | Número |
-|------|--------|
-| Rafael Alves Pereira | nº22507906 |
-| Bernardo Esteves Margarido | nº22508039 |
-| Brian Ferrari Franck | nº22502756 |
-| Filipe Lopes | nº22508487 |
+| Nome | 
+|------|
+| Rafael Alves Pereira | 
+| Bernardo Esteves Margarido | 
+| Brian Ferrari Franck |
+| Filipe Lopes | 
 
 ## Objetivo
 
